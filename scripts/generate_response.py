@@ -4,12 +4,21 @@ import os
 import re
 import pandas as pd
 from datasets import load_dataset
+import litellm
 from litellm import acompletion
+from tqdm.asyncio import tqdm_asyncio
+
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Query questions with LiteLLM.")
     parser.add_argument("--model", required=True, help="Model name to call.")
+    parser.add_argument(
+        "--system",
+        type=str,
+        default=None,
+        help="Optional system prompt to prepend.",
+    )
     parser.add_argument(
         "--temperature",
         type=float,
@@ -20,7 +29,7 @@ def parse_args():
         "--top-p",
         dest="top_p",
         type=float,
-        default=1.0,
+        default=None,
         help="Nucleus sampling probability mass.",
     )
     parser.add_argument(
@@ -63,18 +72,27 @@ def extract_text(resp):
         return ""
 
 
-async def fetch_answer(model, question, row_data, q_idx, run_idx, sem, temperature, top_p, max_tokens):
+async def fetch_answer(model, system_prompt, question, row_data, q_idx, run_idx, sem, temperature, top_p, max_tokens):
     async with sem:
-        resp = await acompletion(
-            model=model,
-            messages=[{"role": "user", "content": question}],
-            temperature=temperature,
-            top_p=top_p,
-            max_tokens=max_tokens,
-        )
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": question})
+
+        kwargs = {
+            "model": model,
+            "messages": messages,
+        }
+        if temperature is not None:
+            kwargs["temperature"] = temperature
+        if top_p is not None:
+            kwargs["top_p"] = top_p
+        if max_tokens is not None:
+            kwargs["max_tokens"] = max_tokens
+
+        resp = await acompletion(**kwargs)
     text = extract_text(resp)
-    print(f"[q={q_idx} run={run_idx}] raw response: {resp}")
-    print(f"[q={q_idx} run={run_idx}] output text: {text}")
+
     return {
         **row_data,
         "question_index": q_idx,
@@ -108,6 +126,7 @@ async def main():
             tasks.append(
                 fetch_answer(
                     args.model,
+                    args.system,
                     question,
                     row_data,
                     q_idx,
@@ -119,7 +138,12 @@ async def main():
                 )
             )
 
-    results = await asyncio.gather(*tasks)
+    # Create tasks so we can consume completions with progress.
+    tasks = [asyncio.create_task(coro) for coro in tasks]
+    results = []
+    for fut in tqdm_asyncio.as_completed(tasks, total=len(tasks)):
+        result = await fut
+        results.append(result)
     out_df = pd.DataFrame(results)
     out_df.to_csv(out_path, index=False)
     print(f"Saved {len(out_df)} rows to {out_path}")
