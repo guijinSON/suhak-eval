@@ -1,11 +1,10 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/usr/bin/env
 
 # Fill in your API tokens before running.
 # export OPENAI_API_KEY="YOUR_OPENAI_KEY"
-export GEMINI_API_KEY=""
-export OPENROUTER_API_KEY=""
-export HF_TOKEN=""
+export GEMINI_API_KEY=
+export OPENROUTER_API_KEY=
+export HF_TOKEN=
 
 # Fixed settings; edit here as needed.
 MODEL="gemini/gemini-2.5-flash"

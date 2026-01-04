@@ -72,6 +72,20 @@ def extract_text(resp):
         return ""
 
 
+def extract_usage(resp):
+    total = None
+    reasoning = None
+    try:
+        total = resp.usage.total_tokens
+    except Exception:
+        pass
+    try:
+        reasoning = getattr(getattr(resp.usage, "completion_tokens_details", None), "reasoning_tokens", None)
+    except Exception:
+        pass
+    return total, reasoning
+
+
 async def fetch_answer(model, system_prompt, question, row_data, q_idx, run_idx, sem, temperature, top_p, max_tokens):
     async with sem:
         messages = []
@@ -92,6 +106,7 @@ async def fetch_answer(model, system_prompt, question, row_data, q_idx, run_idx,
 
         resp = await acompletion(**kwargs)
     text = extract_text(resp)
+    total_tokens, reasoning_tokens = extract_usage(resp)
 
     return {
         **row_data,
@@ -102,6 +117,8 @@ async def fetch_answer(model, system_prompt, question, row_data, q_idx, run_idx,
         "temperature": temperature,
         "top_p": top_p,
         "max_tokens": max_tokens,
+        "total_tokens": total_tokens,
+        "reasoning_tokens": reasoning_tokens,
     }
 
 
